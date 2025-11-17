@@ -9,7 +9,7 @@ Final Project; Smart Card
 # Card Model and BKT Algorithm
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 
 
 @dataclass
@@ -45,16 +45,41 @@ class Card:
         """
 
     def to_dict(self) -> dict:
-        """
+        return{
+            'card_id': self.card_id,
+            'front': self.front,
+            'back': self.back,
+            'p_init': self.p_init,
+            'p_learn': self.p_learn,
+            'p_slip': self.p_slip,
+            'p_guess': self.p_guess,
+            'p_known': self.p_known,
+            'attempts': self.attempts,
+            'correct': self.correct,
+            'last_outcome_correct': self.last_outcome_correct,
 
-        :return:
-        """
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> 'Card':
+        return Card(
+            card_id=data['card_id'],
+            front=data['front'],
+            back=data['back'],
+            p_init=data.get('p_init', 0.2),
+            p_learn=data.get('p_learn', 0.15),
+            p_slip=data.get('p_slip', 0.1),
+            p_guess=data.get('p_guess', 0.2),
+            p_known=data.get('p_known', data.get('p_init', 0.2)),
+            attempts=data.get('attempts', 0),
+            correct=data.get('correct', 0),
+            last_outcome_correct=data.get('last_outcome_correct', None),
+        )
 
 @dataclass
 class Deck:
-    """
-
-    """
+    cards: List[Card] = field(default_factory=list)
+    next_id: int = 1
     def add_card(self, card: Card) -> None:
         """
 
@@ -67,6 +92,33 @@ class Deck:
         :param card_id:
         :return:
         """
+
+    def to_dict(self) -> dict:
+        return {
+            "next_id": self.next_id,
+            "cards": self.cards,
+        }
+
+    def from_dict(self, data: dict) -> 'Deck':
+        deck = Deck()
+        deck.next_id = data['next_id', 1]
+        deck.cards = [Card.from_dict(cd) for cd in data['cards']]
+        return deck
+
+#SAVING PROGRESS
+# this is where the states will save to
+SAVE_FILE = "smart_cards_state.json"
+
+def save_deck(deck: Deck) -> None:
+    """
+    Will save the deck into a json file
+    :param deck:
+    :return:
+    """
+
+def load_deck() -> Deck:
+    """"""
+
 
 # -----MENU-----
 
