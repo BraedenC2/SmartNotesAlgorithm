@@ -5,6 +5,7 @@ Project Started on 11/17/2025
 Final Project; Smart Card
 (A smart flashcard application)
 """
+import datetime
 import random
 # Card Model and BKT Algorithm
 
@@ -12,11 +13,12 @@ from dataclasses import dataclass, field
 from typing import Optional, List
 
 
+# data models:
+
 @dataclass
-class Card:
-    card_id: int
-    front: str
-    back: str
+class Skill:
+    skill_id: int
+    name: str
 
     #BKT parameters (adjustable by the user in the future)
     p_init: float = 0.2
@@ -30,7 +32,7 @@ class Card:
     #Reporting states:
     attempts: int = 0
     correct: int = 0
-    last_outcome_correct: Optional[bool] = None
+
 
     def update_bkt(self) -> None:
         """
@@ -44,10 +46,9 @@ class Card:
         return self.correct / self.attempts
 
     def to_dict(self) -> dict:
-        return{
-            'card_id': self.card_id,
-            'front': self.front,
-            'back': self.back,
+        return {
+            'skill_id': self.skill_id,
+            'name': self.name,
             'p_init': self.p_init,
             'p_learn': self.p_learn,
             'p_slip': self.p_slip,
@@ -55,16 +56,13 @@ class Card:
             'p_known': self.p_known,
             'attempts': self.attempts,
             'correct': self.correct,
-            'last_outcome_correct': self.last_outcome_correct,
-
         }
 
     @staticmethod
-    def from_dict(d: dict) -> 'Card':
-        return Card(
-            card_id=d['card_id'],
-            front=d['front'],
-            back=d['back'],
+    def from_dict(d: dict) -> 'Skill':
+        return Skill(
+            skill_id=d['skill_id'],
+            name=d['name'],
             p_init=d.get('p_init', 0.2),
             p_learn=d.get('p_learn', 0.15),
             p_slip=d.get('p_slip', 0.1),
@@ -72,8 +70,70 @@ class Card:
             p_known=d.get('p_known', d.get('p_init', 0.2)),
             attempts=d.get('attempts', 0),
             correct=d.get('correct', 0),
-            last_outcome_correct=d.get('last_outcome_correct', None),
         )
+
+@dataclass
+class Card:
+    card_id: int
+    front: str
+    back: str
+    skill_ids: List[int] = field(default_factory=list)
+
+    #stats
+    attempts: int = 0
+    correct: int = 0
+    last_outcome_correct: Optional[bool] = None
+
+    #scheduling
+    last_review: Optional[datetime] = None
+    next_due: Optional[datetime] = None
+    interval_days: float = 0.0
+
+    #last_outcome_correct: Optional[bool] = None
+
+    def to_dict(self) -> dict:
+        return {
+            'card_id': self.card_id,
+            'front': self.front,
+            'back': self.back,
+            'skill_ids': self.skill_ids,
+            'attempts': self.attempts,
+            'correct': self.correct,
+            'last_outcome_correct': self.last_outcome_correct,
+            'last_review': self.last_review,
+            'next_due': self.next_due,
+            'interval_days': self.interval_days,
+        }
+    @staticmethod
+    def from_dict(d: dict) -> 'Card':
+        def parse_dt(s: Optional[str]) -> Optional[datetime]:
+            if s is None:
+                return None
+            try:
+                return datetime
+            except Exception:
+                return None
+
+        return Card(
+            card_id=d['card_id'],
+            front=d['front'],
+            back=d['back'],
+            skill_ids=d.get('skill_ids', []),
+            attempts=d.get('attempts',0),
+            correct=d.get('correct',0),
+            last_outcome_correct=d.get('last_outcome_correct',None),
+            last_review=parse_dt(d.get('last_review')),
+            next_due=parse_dt(d.get('next_due')),
+            interval_days=d.get('interval_days', 0.0),
+
+        )
+    @property
+    def accuracy(self) -> float:
+        if self.attempts == 0:
+            return 0.0
+        return self.correct / self.attempts
+
+
 
 @dataclass
 class Deck:
@@ -125,6 +185,10 @@ def load_deck() -> Deck:
 # ----- Bandit -----
 
 def compute_card_priority(card: Card) -> float:
+    now = datetime.datetime.now()
+
+    if card.next_due is None:
+        due_score = 1.0
 
 
 def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
