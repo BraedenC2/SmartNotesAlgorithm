@@ -5,7 +5,7 @@ Project Started on 11/17/2025
 Final Project; Smart Card
 (A smart flashcard application)
 """
-
+import random
 # Card Model and BKT Algorithm
 
 from dataclasses import dataclass, field
@@ -39,10 +39,9 @@ class Card:
 
     @property
     def accuracy(self) -> float:
-        """
-
-        :return:
-        """
+        if self.attempts == 0:
+            return 0.0
+        return self.correct / self.attempts
 
     def to_dict(self) -> dict:
         return{
@@ -61,19 +60,19 @@ class Card:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> 'Card':
+    def from_dict(d: dict) -> 'Card':
         return Card(
-            card_id=data['card_id'],
-            front=data['front'],
-            back=data['back'],
-            p_init=data.get('p_init', 0.2),
-            p_learn=data.get('p_learn', 0.15),
-            p_slip=data.get('p_slip', 0.1),
-            p_guess=data.get('p_guess', 0.2),
-            p_known=data.get('p_known', data.get('p_init', 0.2)),
-            attempts=data.get('attempts', 0),
-            correct=data.get('correct', 0),
-            last_outcome_correct=data.get('last_outcome_correct', None),
+            card_id=d['card_id'],
+            front=d['front'],
+            back=d['back'],
+            p_init=d.get('p_init', 0.2),
+            p_learn=d.get('p_learn', 0.15),
+            p_slip=d.get('p_slip', 0.1),
+            p_guess=d.get('p_guess', 0.2),
+            p_known=d.get('p_known', d.get('p_init', 0.2)),
+            attempts=d.get('attempts', 0),
+            correct=d.get('correct', 0),
+            last_outcome_correct=d.get('last_outcome_correct', None),
         )
 
 @dataclass
@@ -93,16 +92,20 @@ class Deck:
         :return:
         """
 
+    def is_empty(self) -> bool:
+        return len(self.cards) == 0
+
     def to_dict(self) -> dict:
         return {
             "next_id": self.next_id,
             "cards": self.cards,
         }
 
-    def from_dict(self, data: dict) -> 'Deck':
+    @staticmethod
+    def from_dict(d: dict) -> "Deck":
         deck = Deck()
-        deck.next_id = data['next_id', 1]
-        deck.cards = [Card.from_dict(cd) for cd in data['cards']]
+        deck.next_id = d.get('next_id', 1)
+        deck.cards = [Card.from_dict(cd) for cd in d.get('cards', [])]
         return deck
 
 #SAVING PROGRESS
@@ -118,6 +121,43 @@ def save_deck(deck: Deck) -> None:
 
 def load_deck() -> Deck:
     """"""
+
+# ----- Bandit -----
+
+def compute_card_priority(card: Card) -> float:
+
+
+def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
+    if deck.is_empty():
+        return None
+
+    if random.random() < epsilon:
+        return random.choice(deck.cards)
+
+    best_card = None
+    best_score = -1.0
+    for card in deck.cards:
+        score = compute_card_priority(card)
+        if score > best_score:
+            best_score = score
+            best_card = card
+
+    return best_card
+
+
+# ----- UI ------
+
+def print_header(title: str) -> None:
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60 + "\n")
+
+def prinpt_int(print: str) -> None:
+    """"""
+
+def wait_for_enter(msg: str = "Press enter to continue...") -> None:
+    input(msg)
+
 
 
 # -----MENU-----
