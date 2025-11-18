@@ -7,6 +7,7 @@ Final Project; Smart Card
 """
 import datetime
 import json
+import math
 import os
 import random
 # Card Model and BKT Algorithm
@@ -81,6 +82,13 @@ class Card:
     back: str
     skill_ids: List[int] = field(default_factory=list)
 
+
+    p_init: float = 0.2
+    p_learn: float = 0.15
+    p_slip: float = 0.1
+    p_guess: float = 0.2
+    p_known: float = 0.2
+
     #stats
     attempts: int = 0
     correct: int = 0
@@ -91,7 +99,36 @@ class Card:
     next_due: Optional[datetime] = None
     interval_days: float = 0.0
 
-    #last_outcome_correct: Optional[bool] = None
+    def update_bkt(self, is_correct: bool) -> None:
+        prior = self.p_known
+        s = self.p_slip
+        g = self.p_guess
+        t = self.p_learn
+
+        if is_correct:
+            numer = prior * (1 - s)
+            denom = numer + (1 - prior) * g
+        else:
+            numer = prior * s
+            denom = numer + (1 - prior) * (1 -g)
+
+        if denom <= 0:
+            posterior = prior
+        else:
+            posterior = numer / denom
+
+        posterior = posterior + (1 - posterior) * t
+        posterior = max(0.0, min(1.0, posterior))
+
+        if not is_correct and posterior > prior:
+            posterior = prior
+
+        self.p_known = posterior
+
+        self.attempts += 1
+        if is_correct:
+            self.correct += 1
+        self.last_outcome_correct = is_correct
 
     def to_dict(self) -> dict:
         return {
@@ -99,11 +136,18 @@ class Card:
             'front': self.front,
             'back': self.back,
             'skill_ids': self.skill_ids,
+
+            'p_init': self.p_init,
+            'p_learn': self.p_learn,
+            'p_slip': self.p_slip,
+            'p_guess': self.p_guess,
+            'p_known': self.p_known,
+
             'attempts': self.attempts,
             'correct': self.correct,
             'last_outcome_correct': self.last_outcome_correct,
-            'last_review': self.last_review,
-            'next_due': self.next_due,
+            'last_review': self.last_review.isoformat() if self.last_review else None,
+            'next_due': self.next_due.isoformat() if self.next_due else None,
             'interval_days': self.interval_days,
         }
     @staticmethod
@@ -121,6 +165,13 @@ class Card:
             front=d['front'],
             back=d['back'],
             skill_ids=d.get('skill_ids', []),
+
+            p_init=d.get("p_init", 0.2),
+            p_learn=d.get("p_learn", 0.15),
+            p_slip=d.get("p_slip", 0.1),
+            p_guess=d.get("p_guess", 0.2),
+            p_known=d.get("p_known", d.get("p_init", 0.2)),
+
             attempts=d.get('attempts',0),
             correct=d.get('correct',0),
             last_outcome_correct=d.get('last_outcome_correct',None),
@@ -140,29 +191,61 @@ class Card:
 @dataclass
 class Deck:
     cards: List[Card] = field(default_factory=list)
-    next_id: int = 1
-    def add_card(self, card: Card) -> None:
-        """
+    skills: List[Skill] = field(default_factory=list)
+    next_card_id: int = 1
+    next_skill_id: int = 1
 
-        :param card:
-        :return:
-        """
-    def get_card_by_id(self, card_id: int) -> Card:
-        """
+    def add_card(self, front: str, back: str, skill_ids: List[int]) -> Card:
+        card = Card(
+            card_id=self.next_card_id,
+            front=front.strip(),
+            back=back.strip(),
+            skill_ids=skill_ids,
+        )
+        self.cards.append(card)
+        self.next_card_id += 1
+        return card
 
-        :param card_id:
-        :return:
-        """
+    def get_card_by_id(self, cid: int) -> Optional[Card]:
+        for c in self.cards:
+            if c.card_id == cid:
+                return c
+        return None
+
+    def get_skill_by_id(self, sid: int) -> Optional[Skill]:
+        for s in self.skills:
+            if s.skill_id == sid:
+                return s
+        return None
+
+    def get_or_create_skill_by_name(self, name: str) -> Skill:
+        name = name.strip()
+        for s in self.skills:
+            if s.name.lower() == name.lower():
+                return s
+        skill = Skill(
+            skill_id=self.next_skill_id,
+            name=name,
+        )
+        self.skills.append(skill)
+        self.next_skill_id += 1
+        return skill
 
     def is_empty(self) -> bool:
         return len(self.cards) == 0
 
+
+# saving and loading
+
     def to_dict(self) -> dict:
         return {
-            "next_id": self.next_id,
-            "cards": self.cards,
+            "next_card_id": self.next_card_id,
+            "next_skill_id": self.next_skill_id,
+            "cards": [c.to_dict() for c in self.cards],
+            "skills": [s.to_dict() for s in self.skills],
         }
 
+# Will have to make the following below more backwards compatible... basically have to redo this method
     @staticmethod
     def from_dict(d: dict) -> "Deck":
         deck = Deck()
@@ -176,7 +259,7 @@ SAVE_FILE = "smart_cards_state.json"
 LOG_FILE = "smart_cards_log.json"
 
 def save_deck(deck: Deck, path: str = SAVE_FILE) -> None:
-    with open(path, "w", enchoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(deck.to_dict(), f, indent=2)
 
 
@@ -194,22 +277,45 @@ def load_deck(path: str = SAVE_FILE) -> Deck:
 # ----- Mastery Logics -----
 
 def compute_card_mastery(deck: Deck, card: Card) -> float:
-    vals = []
-    for sid in card.skill_ids:
-        skill = deck.get_skill_by_id(sid)
-        if skill is not None:
-            vals.append(skill.p_known)
-    if not vals:
-        return 0.2
-    return sum(vals) / len(vals)
+    return card.p_known
+
+def update_card_schedule(deck: Deck, card: Card) -> Deck:
+    """Will add space repetition here"""
+
+
 
 def compute_card_priority(card: Card) -> float:
     now = datetime.datetime.now()
+    mastery = compute_card_mastery(card)
 
     if card.next_due is None:
         due_score = 1.0
+    else:
+        dt = (card.next_due - now).total_seconds() / 3600.0
+        if dt <= 0:
+            overdue_hours=-dt
+            due_score = 1.0 - math.exp(-overdue_hours/24.0)
+        else:
+            due_score = 1.0 / (1.0 + dt)
+
+    urgerncy = 1.0 - mastery
+    exploration = 0.2 * math.exp(-0.2 * card.attempts)
+
+    last = card.last_outcome_correct
+    if last is True:
+        outcome_adjust = -0.05
+    elif last is False:
+        outcome_adjust = 0.05
+    else:
+        outcome_adjust = 0.0
+
+    priority = 0.7 * urgerncy + 0.25 * due_score + exploration + outcome_adjust
+    return max(0.0, min(1.0, priority))
 
 
+
+
+#Need to update this class!!! add a log interaction!!!
 def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
     if deck.is_empty():
         return None
@@ -231,12 +337,9 @@ def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
 # ----- UI ------
 
 def print_header(title: str) -> None:
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print(title)
-    print("=" * 60 + "\n")
-
-def prinpt_int(print: str) -> None:
-    """"""
+    print("=" * 70 + "\n")
 
 def wait_for_enter(msg: str = "Press enter to continue...") -> None:
     input(msg)
@@ -245,6 +348,7 @@ def wait_for_enter(msg: str = "Press enter to continue...") -> None:
 
 # -----MENU-----
 
+# Make updates to the menu!!!!!
 def action_add_card(deck: Deck) -> None:
     print("Add new card: ")
     front = input("Front: (term/question)")
