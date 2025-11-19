@@ -10,10 +10,9 @@ import json
 import math
 import os
 import random
-# Card Model and BKT Algorithm
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 # data models:
@@ -37,10 +36,32 @@ class Skill:
     correct: int = 0
 
 
-    def update_bkt(self) -> None:
-        """
-        :return:
-        """
+    def update_bkt(self, is_correct: bool) -> None:
+        prior = self.p_known
+
+        s = min(max(self.p_slip, 1e-4), 0.99)
+        g = min(max(self.p_guess, 1e-4), 0.99)
+        t = min(max(self.p_learn, 0.0), 0.5)
+
+        if is_correct:
+            numer = prior * (1 - s)
+            denom = numer + (1 - prior) * g
+        else:
+            numer = prior * s
+            denom = numer + (1 - prior) * (1 - g)
+
+        if denom <= 0:
+            posterior = prior
+        else:
+            posterior = numer / denom
+
+        posterior = posterior + (1 - posterior) * t
+        posterior = max(0.0, min(1.0, posterior))
+
+        self.p_known = posterior
+        self.attempts += 1
+        if is_correct:
+            self.correct += 1
 
     @property
     def accuracy(self) -> float:
@@ -101,9 +122,10 @@ class Card:
 
     def update_bkt(self, is_correct: bool) -> None:
         prior = self.p_known
-        s = self.p_slip
-        g = self.p_guess
-        t = self.p_learn
+
+        s = min(max(self.p_slip, 1e-4), 0.99)
+        g = min(max(self.p_guess, 1e-4), 0.99)
+        t = min(max(self.p_learn, 0.0), 0.5)
 
         if is_correct:
             numer = prior * (1 - s)
@@ -245,12 +267,22 @@ class Deck:
             "skills": [s.to_dict() for s in self.skills],
         }
 
-# Will have to make the following below more backwards compatible... basically have to redo this method
     @staticmethod
     def from_dict(d: dict) -> "Deck":
         deck = Deck()
-        deck.next_id = d.get('next_id', 1)
+        deck.next_card_id = d.get('next_card_id', 1)
+        deck.next_skill_id = d.get('next_skill_id', 1)
         deck.cards = [Card.from_dict(cd) for cd in d.get('cards', [])]
+        deck.skills = [Skill.from_dict(sd) for sd in d.get('skills', [])]
+
+        if not deck.skills and deck.cards:
+            default_skill = Skill(skill_id =deck.next_skill_id, name= "general")
+            deck.skills.append(default_skill)
+            deck.next_skill_id += 1
+            for c in deck.cards:
+                if not c.skill_ids:
+                    c.skill_ids.append(default_skill.skill_id)
+
         return deck
 
 #SAVING PROGRESS
@@ -279,14 +311,28 @@ def load_deck(path: str = SAVE_FILE) -> Deck:
 def compute_card_mastery(deck: Deck, card: Card) -> float:
     return card.p_known
 
-def update_card_schedule(deck: Deck, card: Card) -> Deck:
-    """Will add space repetition here"""
-
-
-
-def compute_card_priority(card: Card) -> float:
+def update_card_schedule(card: Card, mastery: float, is_correct:bool) -> None:
     now = datetime.datetime.now()
-    mastery = compute_card_mastery(card)
+
+    if is_correct:
+        factor = 1.5 + 2.5 * mastery
+        if card.interval_days < 1e-6:
+            new_interval =1.0
+        else:
+            new_interval = card.interval_days / factor
+    else:
+        new_interval = 1.0
+
+    card.interval_days = max(0.5, new_interval)
+    card.last_review = now
+    card.next_due = now + datetime.timedelta(days=card.interval_days)
+
+
+
+
+def compute_card_priority(deck: Deck, card: Card) -> float:
+    now = datetime.datetime.now()
+    mastery = compute_card_mastery(deck, card)
 
     if card.next_due is None:
         due_score = 1.0
@@ -298,26 +344,32 @@ def compute_card_priority(card: Card) -> float:
         else:
             due_score = 1.0 / (1.0 + dt)
 
-    urgerncy = 1.0 - mastery
+    urgency = 1.0 - mastery
     exploration = 0.2 * math.exp(-0.2 * card.attempts)
 
     last = card.last_outcome_correct
-    if last is True:
+    if last:
         outcome_adjust = -0.05
     elif last is False:
         outcome_adjust = 0.05
     else:
         outcome_adjust = 0.0
 
-    priority = 0.7 * urgerncy + 0.25 * due_score + exploration + outcome_adjust
+    priority = 0.7 * urgency + 0.25 * due_score + exploration + outcome_adjust
     return max(0.0, min(1.0, priority))
 
 
-
-
-#Need to update this class!!! add a log interaction!!!
 def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
     if deck.is_empty():
+        return None
+
+    now = datetime.datetime.now()
+    due_cards: List[Card] = [
+        c for c in deck.cards
+        if c.next_due is None or c.next_due <= now
+    ]
+
+    if not due_cards:
         return None
 
     if random.random() < epsilon:
@@ -325,14 +377,25 @@ def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
 
     best_card = None
     best_score = -1.0
-    for card in deck.cards:
-        score = compute_card_priority(card)
+    for card in due_cards:
+        score = compute_card_priority(deck, card)
         if score > best_score:
             best_score = score
             best_card = card
 
     return best_card
 
+def log_interaction (
+        deck: Deck,
+        card: Card,
+        is_correct:bool,
+        user_resp: str,
+        skill_masteries_before: Dict[int, float],
+        skill_masteries_after: Dict[int, float],
+        mastery_before: float,
+        mastery_after: float,
+) -> None:
+    now = datetime.datetime.now().isoformat()
 
 # ----- UI ------
 
