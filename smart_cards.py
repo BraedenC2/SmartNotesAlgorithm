@@ -467,8 +467,18 @@ def log_interaction (
         "algorithm": deck.current_algorithm,
         "card_id": card.card_id,
         "front": card.front,
-        # ended here
+        "skill_ids": card.skill_ids,
+        "is_correct": is_correct,
+        "user_resp": user_resp,
+        "skill_masteries_before": skill_masteries_before,
+        "skill_masteries_after": skill_masteries_after,
+        "card_mastery_before": mastery_before,
+        "card_mastery_after": mastery_after,
+        "card_attempts_total": card.attempts,
+        "card_correct_total": card.correct,
     }
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
 
 # ----- UI ------
 
@@ -480,17 +490,37 @@ def print_header(title: str) -> None:
 def wait_for_enter(msg: str = "Press enter to continue...") -> None:
     input(msg)
 
+def prompt_float(prompt: str, current:float) -> float:
+    s = input(f"{prompt} [current: {current}]: ").strip()
+    if not s:
+        return current
+    try:
+        return float(s)
+    except ValueError:
+        print("Invalid number")
+        return current
 
 
 # -----MENU-----
 
-# Make updates to the menu!!!!!
 def action_add_card(deck: Deck) -> None:
     print("Add new card: ")
-    front = input("Front: (term/question)")
-    back = input("Back: (Definition/Answer)")
-    card = deck.add_card(front, back)
-    print(f"\nCard #{card.card_id} created")
+    front = input("Front: (term/question): ").strip()
+
+    if not front:
+        print("Front cannot be empty. Card not added.")
+        wait_for_enter()
+        return
+
+    back = input("Back: (Definition/Answer): ").strip()
+    if not back:
+        print("Back cannot be empty. Card not added.")
+        wait_for_enter()
+        return
+
+    print("\nTag this card with skills.")
+    skills_line = input("Skill names (comma-separated, blank for general): ").strip()
+
 
 def action_study(deck: Deck) -> None:
     print("Study Mode")
@@ -509,6 +539,7 @@ def action_mastery_report_cards(deck: Deck) -> None:
 
     sorted_cards = sorted(deck.cards, key=lambda c: compute_card_mastery(deck, c))
 
+    print(f"Current algorithm: {ALGORITHMS[deck.current_algorithm]['name']}\n")
     print(f"{'ID':<4} {'Mastery':<10} {'Attempts':<9} {'Accuracy':<10} Front")
     print("-" * 80)
     for c in sorted_cards:
@@ -537,43 +568,60 @@ def action_mastery_report_skills(deck: Deck) -> None:
     print()
     wait_for_enter()
 
+def action_change_algorithm(deck: Deck) -> None:
+    print_header("Change Algorithm")
+
+def action_tune_parameters(deck: Deck) -> None:
+    print_header("Tune Parameters")
+
 
 
 
 
 def main() -> None:
     deck = load_deck()
+
     while True:
-        print("Welcome to SmartCards!")
+        print_header("Welcome to SmartCards!")
+        print(f"Active algorithm: {ALGORITHMS[deck.current_algorithm]['name']}")
+        print(f"Exploration epsilon: {deck.epsilon:.2f}")
+        print()
         print("MENU:")
         print("1. Add new card")
-        print("2. Study Mode")
-        print("3. View all cards")
+        print("2. View all cards")
+        print("3. Study cards")
         print("4. Mastery Report (Cards)")
         print("5. Mastery Report (Skills)")
-        print("6. Save and Quit")
+        print("6. Change algorithm")
+        print("7. Personalization")
+        print("8. Save and Quit")
         print("0. Exit without saving")
 
-        user_input = input("Enter your choice: ")
+
+        user_input = input("Enter your choice: ").strip()
         if user_input == "1":
             action_add_card(deck)
         elif user_input == "2":
             action_study(deck)
         elif user_input == "3":
-            """view all cards"""
+            action_study(deck)
         elif user_input == "4":
             action_mastery_report_cards(deck)
         elif user_input == "5":
-            """"""
+            action_mastery_report_skills(deck)
         elif user_input == "6":
+            action_change_algorithm(deck)
+        elif user_input == "7":
+            action_tune_parameters(deck)
+        elif user_input == "8":
             save_deck(deck)
-            print_header(f"Smart Cards Saved")
+            print_header("Saved! Exiting...")
             break
         elif user_input == "0":
             print("Exiting...")
             break
         else:
-            print("Invalid input")
+            print("Invalid choice. Try again.\n")
 
 
 if __name__ == "__main__":
