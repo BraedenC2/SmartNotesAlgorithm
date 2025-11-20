@@ -521,6 +521,48 @@ def action_add_card(deck: Deck) -> None:
     print("\nTag this card with skills.")
     skills_line = input("Skill names (comma-separated, blank for general): ").strip()
 
+    if not skills_line:
+        skill_names = ["general"]
+    else:
+        skill_names = [s.strip() for s in skills_line.split(",") if s.strip()]
+
+    skill_ids: List[int] = []
+    for name in skill_names:
+        skill = deck.get_or_create_skill_by_name(name)
+        if skill.skill_id not in skill_ids:
+            skill_ids.append(skill.skill_id)
+
+    card = deck.add_card(front, back, skill_ids)
+    print(f"\nCard #{card.card_id} created with skills: "
+          f"{', '.join(deck.get_skill_by_id(sid).name for sid in skill_ids)}")
+    wait_for_enter()
+
+def action_view_cards(deck: Deck) -> None:
+    print("All Cards: ")
+    if deck.is_empty():
+        print("Empty deck")
+        wait_for_enter()
+        return
+
+    print(f"Active algorithm: {ALGORITHMS[deck.current_algorithm]['name']}")
+    print()
+    print(f"{'ID':<4} {'Mastery':<10} {'Attempts':<9} {'Correct':<9} {'Due':<20} Front")
+    print("-" * 90)
+    now = datetime.datetime.now()
+
+    for c in sorted(deck.cards, key=lambda x: x.card_id):
+        mastery = f"{compute_card_mastery(deck, c):.2f}"
+        due_str = (
+            c.next_due.strftime("%Y-%m-%d %H:%M")
+            if c.next_due is not None
+            else "never"
+        )
+        if c.next_due is not None and c.next_due <= now:
+            due_str += " (due)"
+
+        print(f"{c.card_id:<4} {mastery:<10} {c.attempts:<9} {c.correct:<9} {due_str:<20} {c.front}")
+        print()
+        wait_for_enter()
 
 def action_study(deck: Deck) -> None:
     print("Study Mode")
@@ -602,7 +644,7 @@ def main() -> None:
         if user_input == "1":
             action_add_card(deck)
         elif user_input == "2":
-            action_study(deck)
+            action_view_cards()
         elif user_input == "3":
             action_study(deck)
         elif user_input == "4":

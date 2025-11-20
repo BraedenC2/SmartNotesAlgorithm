@@ -6,7 +6,7 @@ LOG_FILE = "smart_cards_log.jsonl"
 def load_log():
     """"""
 
-def sumarize_by_algorithm():
+def summarize_by_algorithm():
     """"""
 
 
