@@ -14,6 +14,35 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict
 
+# ALGORITHMS
+
+ALGORITHMS: Dict[str, Dict[str, str]] = {
+    "hybrid":{
+        "name": "Hybrid BKT + SR",
+        "description": (
+            "Card-level BKT for mastery, plus spaced repetition intervals "
+            "that grow based on mastery, with bandit scheduling."
+        ),
+    },
+    "pure_sr": {
+        "name": "Pure Spaced Repetition",
+        "description": (
+            "No BKT. Mastery is estimated from card accuracy only. "
+            "Intervals grow/shrink based on correctness; bandit scheduling still used."
+        ),
+    },
+    "fast_bkt": {
+        "name": "Fast-Learning BKT + SR",
+        "description": (
+            "Same as Hybrid BKT + SR, but with more aggressive learning parameters "
+            "(higher p_learn, higher p_init)."
+        )
+    }
+
+
+
+}
+
 
 # data models:
 
@@ -57,6 +86,10 @@ class Skill:
 
         posterior = posterior + (1 - posterior) * t
         posterior = max(0.0, min(1.0, posterior))
+
+        if not is_correct and posterior > prior:
+            posterior = prior
+
 
         self.p_known = posterior
         self.attempts += 1
@@ -120,12 +153,16 @@ class Card:
     next_due: Optional[datetime] = None
     interval_days: float = 0.0
 
-    def update_bkt(self, is_correct: bool) -> None:
+    def update_bkt(self, is_correct: bool, fast_mode: bool = False) -> None:
         prior = self.p_known
 
         s = min(max(self.p_slip, 1e-4), 0.99)
         g = min(max(self.p_guess, 1e-4), 0.99)
-        t = min(max(self.p_learn, 0.0), 0.5)
+
+        if fast_mode:
+            t = min(max(self.p_learn * 2.0, 0.0), 0.7)
+        else:
+            t = min(max(self.p_learn, 0.0), 0.5)
 
         if is_correct:
             numer = prior * (1 - s)
@@ -178,7 +215,7 @@ class Card:
             if s is None:
                 return None
             try:
-                return datetime
+                return datetime.datetime.fromisoformat(s)
             except Exception:
                 return None
 
@@ -216,6 +253,11 @@ class Deck:
     skills: List[Skill] = field(default_factory=list)
     next_card_id: int = 1
     next_skill_id: int = 1
+
+    current_algorithm: str = "hybrid"
+    epsilon: float = 0.2
+    min_growth: float = 1.5
+    max_growth: float = 4.0
 
     def add_card(self, front: str, back: str, skill_ids: List[int]) -> Card:
         card = Card(
@@ -265,6 +307,11 @@ class Deck:
             "next_skill_id": self.next_skill_id,
             "cards": [c.to_dict() for c in self.cards],
             "skills": [s.to_dict() for s in self.skills],
+
+            "current_algorithm": self.current_algorithm,
+            "epsilon": self.epsilon,
+            "min_growth": self.min_growth,
+            "max_growth": self.max_growth,
         }
 
     @staticmethod
@@ -274,6 +321,11 @@ class Deck:
         deck.next_skill_id = d.get('next_skill_id', 1)
         deck.cards = [Card.from_dict(cd) for cd in d.get('cards', [])]
         deck.skills = [Skill.from_dict(sd) for sd in d.get('skills', [])]
+
+        deck.current_algorithm = d.get('current_algorithm', 'hybrid'),
+        deck.epsilon = d.get('epsilon', 0.2),
+        deck.min_growth = d.get('min_growth', 1.5),
+        deck.max_growth = d.get('max_growth', 4.0),
 
         if not deck.skills and deck.cards:
             default_skill = Skill(skill_id =deck.next_skill_id, name= "general")
@@ -309,25 +361,39 @@ def load_deck(path: str = SAVE_FILE) -> Deck:
 # ----- Mastery Logics -----
 
 def compute_card_mastery(deck: Deck, card: Card) -> float:
-    return card.p_known
-
-def update_card_schedule(card: Card, mastery: float, is_correct:bool) -> None:
-    now = datetime.datetime.now()
-
-    if is_correct:
-        factor = 1.5 + 2.5 * mastery
-        if card.interval_days < 1e-6:
-            new_interval =1.0
-        else:
-            new_interval = card.interval_days / factor
+    algo = deck.current_algorithm
+    if algo == "pure_sr":
+        return card.accuracy
     else:
-        new_interval = 1.0
+        return card.p_known
+
+def update_card_schedule(card: Card, mastery: float, is_correct:bool, deck: Deck) -> None:
+    now = datetime.datetime.now()
+    algo = deck.current_algorithm
+
+    if algo == "pure_sr":
+        if is_correct:
+            if card.interval_days < 1e-6:
+                new_interval = 1.0
+            else:
+                new_interval = card.interval_days*2.0
+        else:
+            new_interval = 1
+    else:
+        min_g = deck.min_growth
+        max_g = deck.max_growth
+        factor = min_g + (max_g - min_g) * mastery
+        if is_correct:
+            if card.interval_days < 1e-6:
+                new_interval = 1.0
+            else:
+                new_interval = card.interval_days*factor
+        else:
+            new_interval = 1.0
 
     card.interval_days = max(0.5, new_interval)
     card.last_review = now
     card.next_due = now + datetime.timedelta(days=card.interval_days)
-
-
 
 
 def compute_card_priority(deck: Deck, card: Card) -> float:
@@ -372,7 +438,7 @@ def select_next_card(deck: Deck, epsilon: float= 0.2) -> Optional[Card]:
     if not due_cards:
         return None
 
-    if random.random() < epsilon:
+    if random.random() < deck.epsilon:
         return random.choice(deck.cards)
 
     best_card = None
@@ -396,6 +462,13 @@ def log_interaction (
         mastery_after: float,
 ) -> None:
     now = datetime.datetime.now().isoformat()
+    entry = {
+        "timestamp": now,
+        "algorithm": deck.current_algorithm,
+        "card_id": card.card_id,
+        "front": card.front,
+        # ended here
+    }
 
 # ----- UI ------
 
