@@ -20,29 +20,49 @@ ALGORITHMS: Dict[str, Dict[str, str]] = {
     "hybrid":{
         "name": "Hybrid BKT + SR",
         "description": (
-            "Card-level BKT for mastery, plus spaced repetition intervals "
-            "that grow based on mastery, with bandit scheduling."
+            "Tracks mastery via BKT. Adapts p_learn/p_slip based on "
+            "prediction error (Calibration). Bandit scheduling."
         ),
     },
-    "pure_sr": {
-        "name": "Pure Spaced Repetition",
-        "description": (
-            "No BKT. Mastery is estimated from card accuracy only. "
-            "Intervals grow/shrink based on correctness; bandit scheduling still used."
-        ),
-    },
-    "fast_bkt": {
-        "name": "Fast-Learning BKT + SR",
-        "description": (
-            "Same as Hybrid BKT + SR, but with more aggressive learning parameters "
-            "(higher p_learn, higher p_init)."
-        )
+    "random": {
+        "name": "Regular Study",
+        "description": "Baseline for validation. Random selection of due cards."
     }
-
-
-
 }
 
+
+# Calculations
+
+def calculate_bkt_update(
+        p_known: float,
+        p_learn: float,
+        p_slip: float,
+        p_guess: float,
+        is_correct: bool
+) -> float:
+    s = min(max(p_slip, 1e-4), 0.99)
+    g = min(max(p_guess, 1e-4), 0.99)
+    t = min(max(p_known, 0.0), 0.99)
+
+    if is_correct:
+        numer = p_known * (1 -s)
+        denon = numer + (1 - p_known) * g
+    else:
+        numer = p_known * s
+        denom = numer + (1 - p_known) * (1 - g)
+
+    posterior = p_known if denom <= 0 else numer/denom
+
+    posterior = posterior + (1 - posterior) * t
+
+    return max(0.0, min(1.0, posterior))
+
+def predict_correctness(
+        p_known: float,
+        p_slip: float,
+        p_guess: float,
+) -> float:
+    return p_known * (1-p_slip) + (1-p_known) * p_guess
 
 # data models:
 
@@ -51,83 +71,27 @@ class Skill:
     skill_id: int
     name: str
 
-    #BKT parameters (adjustable by the user in the future)
-    p_init: float = 0.2
+    #not adjustable by the user... Now adaptive!
+    #p_init: float = 0.2
     p_learn: float = 0.15
     p_slip: float = 0.1
     p_guess: float = 0.2
 
-    # Shouldnt be adjusted by user.
-    p_known: float = 0.2
+    def adapt_parameters(selfself, p_known: float, is_correct: bool, learning_rate: float = 0.05):
+        """"""
 
-    #Reporting states:
-    attempts: int = 0
-    correct: int = 0
-
-
-    def update_bkt(self, is_correct: bool) -> None:
-        prior = self.p_known
-
-        s = min(max(self.p_slip, 1e-4), 0.99)
-        g = min(max(self.p_guess, 1e-4), 0.99)
-        t = min(max(self.p_learn, 0.0), 0.5)
-
-        if is_correct:
-            numer = prior * (1 - s)
-            denom = numer + (1 - prior) * g
-        else:
-            numer = prior * s
-            denom = numer + (1 - prior) * (1 - g)
-
-        if denom <= 0:
-            posterior = prior
-        else:
-            posterior = numer / denom
-
-        posterior = posterior + (1 - posterior) * t
-        posterior = max(0.0, min(1.0, posterior))
-
-        if not is_correct and posterior > prior:
-            posterior = prior
-
-
-        self.p_known = posterior
-        self.attempts += 1
-        if is_correct:
-            self.correct += 1
-
-    @property
-    def accuracy(self) -> float:
-        if self.attempts == 0:
-            return 0.0
-        return self.correct / self.attempts
 
     def to_dict(self) -> dict:
         return {
-            'skill_id': self.skill_id,
-            'name': self.name,
-            'p_init': self.p_init,
-            'p_learn': self.p_learn,
-            'p_slip': self.p_slip,
-            'p_guess': self.p_guess,
-            'p_known': self.p_known,
-            'attempts': self.attempts,
-            'correct': self.correct,
+            k: v for k, v in self.__dict__.items()
         }
 
     @staticmethod
     def from_dict(d: dict) -> 'Skill':
-        return Skill(
-            skill_id=d['skill_id'],
-            name=d['name'],
-            p_init=d.get('p_init', 0.2),
-            p_learn=d.get('p_learn', 0.15),
-            p_slip=d.get('p_slip', 0.1),
-            p_guess=d.get('p_guess', 0.2),
-            p_known=d.get('p_known', d.get('p_init', 0.2)),
-            attempts=d.get('attempts', 0),
-            correct=d.get('correct', 0),
-        )
+        s = Skill(skill_id=d["skill_id"], name=d["name"], p_learn=d["p_learn"])
+        for k,v in d.items():
+            if hasattr(s, k): setattr(s, k, v)
+        return s
 
 @dataclass
 class Card:
@@ -137,22 +101,22 @@ class Card:
     skill_ids: List[int] = field(default_factory=list)
 
 
-    p_init: float = 0.2
-    p_learn: float = 0.15
-    p_slip: float = 0.1
-    p_guess: float = 0.2
+   # p_init: float = 0.2
+    #p_learn: float = 0.15
+   # p_slip: float = 0.1
+   # p_guess: float = 0.2
     p_known: float = 0.2
 
     #stats
     attempts: int = 0
     correct: int = 0
-    last_outcome_correct: Optional[bool] = None
+    # last_outcome_correct: Optional[bool] = None
 
     #scheduling
     last_review: Optional[datetime] = None
     next_due: Optional[datetime] = None
     interval_days: float = 0.0
-
+    """
     def update_bkt(self, is_correct: bool, fast_mode: bool = False) -> None:
         prior = self.p_known
 
@@ -188,9 +152,20 @@ class Card:
         if is_correct:
             self.correct += 1
         self.last_outcome_correct = is_correct
+        """
 
     def to_dict(self) -> dict:
+
+        d = {k: v for k, v in self.__dict__.items()}
+        d['last_review'] = self.last_review.isoformat() if self.last_review else None
+        d['next_due'] = self.next_due.isoformat() if self.next_due else None
+
+        return d
+        """
         return {
+            
+            
+            
             'card_id': self.card_id,
             'front': self.front,
             'back': self.back,
@@ -208,7 +183,8 @@ class Card:
             'last_review': self.last_review.isoformat() if self.last_review else None,
             'next_due': self.next_due.isoformat() if self.next_due else None,
             'interval_days': self.interval_days,
-        }
+            
+        }"""
     @staticmethod
     def from_dict(d: dict) -> 'Card':
         def parse_dt(s: Optional[str]) -> Optional[datetime]:
@@ -621,9 +597,22 @@ def action_tune_parameters(deck: Deck) -> None:
 
 
 def main() -> None:
-    deck = load_deck()
+
+
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as f:
+            deck = Deck.from_dict(json.load(f))
+    else:
+        deck = Deck()
+        s = Skill(1, "Demonstration Deck")
+        deck.skills.append(s)
+        deck.cards.append(Card(1, "Front", "Back", [1]))
+        deck.cards.append(Card(2, "Hola", "Hello", [1]))
+
+    #deck = load_deck()
 
     while True:
+        """
         print_header("Welcome to SmartCards!")
         print(f"Active algorithm: {ALGORITHMS[deck.current_algorithm]['name']}")
         print(f"Exploration epsilon: {deck.epsilon:.2f}")
@@ -638,8 +627,30 @@ def main() -> None:
         print("7. Personalization")
         print("8. Save and Quit")
         print("0. Exit without saving")
+        """
 
+        print(f"\nSmartCards | Cards: {len(deck.cards)} | Skills: {len(deck.skills)}")
+        print("1) Study (Smart Hybrid)")
+        print("2) Offline Validation (Simulation)")
+        print("3) Add Card")
+        print("4) Save and Quit")
 
+        opt = input("Choice: ")
+        if opt == "1":
+            action_study(deck)
+        elif opt == "2":
+            """"""
+        elif opt == "3":
+            f = input("Front: ")
+            b = input("Back: ")
+            deck.cards.append(Card(deck.next_card_id, f, b, [1]))
+            deck.next_card_id += 1
+        elif opt == "4":
+            with open(SAVE_FILE, "w") as f:
+                json.dump(deck.to_dict(), f, indent=2)
+            break
+
+"""
         user_input = input("Enter your choice: ").strip()
         if user_input == "1":
             action_add_card(deck)
@@ -664,7 +675,7 @@ def main() -> None:
             break
         else:
             print("Invalid choice. Try again.\n")
-
+"""
 
 if __name__ == "__main__":
     main()
