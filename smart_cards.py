@@ -77,7 +77,7 @@ class Skill:
     p_slip: float = 0.1
     p_guess: float = 0.2
 
-    def adapt_parameters(selfself, p_known: float, is_correct: bool, learning_rate: float = 0.05):
+    def adapt_parameters(self, p_known: float, is_correct: bool, learning_rate: float = 0.05):
         """"""
 
 
