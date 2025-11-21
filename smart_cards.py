@@ -78,7 +78,12 @@ class Skill:
     p_guess: float = 0.2
 
     def adapt_parameters(self, p_known: float, is_correct: bool, learning_rate: float = 0.05):
-        """"""
+        predicted_prob = predict_correctness(p_known, self.p_slip, self.p_guess)
+        actual = 1.0 if is_correct else 0.0
+        error = actual - predicted_prob
+
+        self.p_learn = max(0.01, min(0.4, self.p_slip -(learning_rate * error)))
+        self.p_learn = max(0.01, min(0.5, self.p_learn +(learning_rate * error * 0.5)))
 
 
     def to_dict(self) -> dict:
@@ -187,39 +192,46 @@ class Card:
         }"""
     @staticmethod
     def from_dict(d: dict) -> 'Card':
-        def parse_dt(s: Optional[str]) -> Optional[datetime]:
-            if s is None:
-                return None
-            try:
-                return datetime.datetime.fromisoformat(s)
-            except Exception:
-                return None
-
-        return Card(
-            card_id=d['card_id'],
-            front=d['front'],
-            back=d['back'],
-            skill_ids=d.get('skill_ids', []),
-
-            p_init=d.get("p_init", 0.2),
-            p_learn=d.get("p_learn", 0.15),
-            p_slip=d.get("p_slip", 0.1),
-            p_guess=d.get("p_guess", 0.2),
-            p_known=d.get("p_known", d.get("p_init", 0.2)),
-
-            attempts=d.get('attempts',0),
-            correct=d.get('correct',0),
-            last_outcome_correct=d.get('last_outcome_correct',None),
-            last_review=parse_dt(d.get('last_review')),
-            next_due=parse_dt(d.get('next_due')),
-            interval_days=d.get('interval_days', 0.0),
-
-        )
-    @property
-    def accuracy(self) -> float:
-        if self.attempts == 0:
-            return 0.0
-        return self.correct / self.attempts
+        c = Card(card_id=d["card_id"], front=d["front"], back=d["back"],)
+        for k, v in d.items():
+            if k not in ['last_review', 'next_due'] and hasattr(c, k):
+                setattr(c, k, v)
+        if d.get("last_review"): c.last_review = datetime.datetime.fromisoformat(d["last_review"])
+        if d.get("next_due"): c.next_due = datetime.datetime.fromisoformat(d["next_due"])
+        return c
+        # def parse_dt(s: Optional[str]) -> Optional[datetime]:
+        #     if s is None:
+        #         return None
+        #     try:
+        #         return datetime.datetime.fromisoformat(s)
+        #     except Exception:
+        #         return None
+        #
+        # return Card(
+        #     card_id=d['card_id'],
+        #     front=d['front'],
+        #     back=d['back'],
+        #     skill_ids=d.get('skill_ids', []),
+        #
+        #     p_init=d.get("p_init", 0.2),
+        #     p_learn=d.get("p_learn", 0.15),
+        #     p_slip=d.get("p_slip", 0.1),
+        #     p_guess=d.get("p_guess", 0.2),
+        #     p_known=d.get("p_known", d.get("p_init", 0.2)),
+        #
+        #     attempts=d.get('attempts',0),
+        #     correct=d.get('correct',0),
+        #     last_outcome_correct=d.get('last_outcome_correct',None),
+        #     last_review=parse_dt(d.get('last_review')),
+        #     next_due=parse_dt(d.get('next_due')),
+        #     interval_days=d.get('interval_days', 0.0),
+        #
+        # )
+    # @property
+    # def accuracy(self) -> float:
+    #     if self.attempts == 0:
+    #         return 0.0
+    #     return self.correct / self.attempts
 
 
 
@@ -230,49 +242,52 @@ class Deck:
     next_card_id: int = 1
     next_skill_id: int = 1
 
-    current_algorithm: str = "hybrid"
+    # current_algorithm: str = "hybrid"
     epsilon: float = 0.2
-    min_growth: float = 1.5
-    max_growth: float = 4.0
+    # min_growth: float = 1.5
+    # max_growth: float = 4.0
 
-    def add_card(self, front: str, back: str, skill_ids: List[int]) -> Card:
-        card = Card(
-            card_id=self.next_card_id,
-            front=front.strip(),
-            back=back.strip(),
-            skill_ids=skill_ids,
-        )
-        self.cards.append(card)
-        self.next_card_id += 1
-        return card
+    def get_skill(self, sid: int) -> Optional[Skill]:
+        return next((s for s in self.skills if s.skill_id == sid), None)
 
-    def get_card_by_id(self, cid: int) -> Optional[Card]:
-        for c in self.cards:
-            if c.card_id == cid:
-                return c
-        return None
-
-    def get_skill_by_id(self, sid: int) -> Optional[Skill]:
-        for s in self.skills:
-            if s.skill_id == sid:
-                return s
-        return None
-
-    def get_or_create_skill_by_name(self, name: str) -> Skill:
-        name = name.strip()
-        for s in self.skills:
-            if s.name.lower() == name.lower():
-                return s
-        skill = Skill(
-            skill_id=self.next_skill_id,
-            name=name,
-        )
-        self.skills.append(skill)
-        self.next_skill_id += 1
-        return skill
-
-    def is_empty(self) -> bool:
-        return len(self.cards) == 0
+    # def add_card(self, front: str, back: str, skill_ids: List[int]) -> Card:
+    #     card = Card(
+    #         card_id=self.next_card_id,
+    #         front=front.strip(),
+    #         back=back.strip(),
+    #         skill_ids=skill_ids,
+    #     )
+    #     self.cards.append(card)
+    #     self.next_card_id += 1
+    #     return card
+    #
+    # def get_card_by_id(self, cid: int) -> Optional[Card]:
+    #     for c in self.cards:
+    #         if c.card_id == cid:
+    #             return c
+    #     return None
+    #
+    # def get_skill_by_id(self, sid: int) -> Optional[Skill]:
+    #     for s in self.skills:
+    #         if s.skill_id == sid:
+    #             return s
+    #     return None
+    #
+    # def get_or_create_skill_by_name(self, name: str) -> Skill:
+    #     name = name.strip()
+    #     for s in self.skills:
+    #         if s.name.lower() == name.lower():
+    #             return s
+    #     skill = Skill(
+    #         skill_id=self.next_skill_id,
+    #         name=name,
+    #     )
+    #     self.skills.append(skill)
+    #     self.next_skill_id += 1
+    #     return skill
+    #
+    # def is_empty(self) -> bool:
+    #     return len(self.cards) == 0
 
 
 # saving and loading
@@ -281,13 +296,13 @@ class Deck:
         return {
             "next_card_id": self.next_card_id,
             "next_skill_id": self.next_skill_id,
+            "epsilon": self.epsilon,
             "cards": [c.to_dict() for c in self.cards],
             "skills": [s.to_dict() for s in self.skills],
 
-            "current_algorithm": self.current_algorithm,
-            "epsilon": self.epsilon,
-            "min_growth": self.min_growth,
-            "max_growth": self.max_growth,
+            # "current_algorithm": self.current_algorithm,
+            # "min_growth": self.min_growth,
+            # "max_growth": self.max_growth,
         }
 
     @staticmethod
@@ -295,11 +310,13 @@ class Deck:
         deck = Deck()
         deck.next_card_id = d.get('next_card_id', 1)
         deck.next_skill_id = d.get('next_skill_id', 1)
-        deck.cards = [Card.from_dict(cd) for cd in d.get('cards', [])]
-        deck.skills = [Skill.from_dict(sd) for sd in d.get('skills', [])]
+        deck.epsilon = d.get('epsilon', 0.2)
+        deck.cards = [Card.from_dict(x) for x in d.get('cards', [])]
+        deck.skills = [Skill.from_dict(x) for x in d.get('skills', [])]
+        return deck
+
 
         deck.current_algorithm = d.get('current_algorithm', 'hybrid'),
-        deck.epsilon = d.get('epsilon', 0.2),
         deck.min_growth = d.get('min_growth', 1.5),
         deck.max_growth = d.get('max_growth', 4.0),
 
@@ -311,7 +328,6 @@ class Deck:
                 if not c.skill_ids:
                     c.skill_ids.append(default_skill.skill_id)
 
-        return deck
 
 #SAVING PROGRESS
 # this is where the states will save to
@@ -336,12 +352,38 @@ def load_deck(path: str = SAVE_FILE) -> Deck:
 
 # ----- Mastery Logics -----
 
+def compute_priority(deck: Deck, card: Card) -> float:
+    if card.next_due is None: return 2.0
+
+    now = datetime.datetime.now()
+    hours_overdue = (now - card.next_due).total_seconds() / 3600
+    urgency = max(0.0, math.log(1 + max(0, hours_overdue)))
+
+    mastery_gap = 1.0 - card.p_known
+    exploration = 1.0 / math.sqrt(1 + card.attempts)
+    return (0.5 * urgency) + (0.3 * mastery_gap) + (0.2 * exploration)
+
+def get_next_card(deck: Deck, algorithm: str = "hybrid") -> Optional[Card]:
+    candidates = [c for c in deck.cards if c.next_due is None or c.next_due <= datetime.datetime.now()]
+    if not candidates: return None
+
+    if algorithm == "random":
+        return random.choice(candidates)
+
+    if random.random() < deck.epsilon:
+        return random.choice(candidates)
+
+    return max(candidates, key=lambda c: compute_priority(deck, c))
+
 def compute_card_mastery(deck: Deck, card: Card) -> float:
     algo = deck.current_algorithm
     if algo == "pure_sr":
         return card.accuracy
     else:
         return card.p_known
+
+def update_model(deck: Deck, card: Card, is_correct: bool):
+    """"""
 
 def update_card_schedule(card: Card, mastery: float, is_correct:bool, deck: Deck) -> None:
     now = datetime.datetime.now()
