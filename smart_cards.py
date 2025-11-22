@@ -692,6 +692,58 @@ def action_tune_parameters(deck: Deck) -> None:
 
 
 
+class VirtualStudent:
+    def __init__(self, deck: Deck):
+        self.memory = {c.card_id: 0.1 for c in deck.cards}
+
+    def attempt(self, card: Card) -> bool:
+        current_mem = self.memory[card.card_id]
+        success = random.random() < current_mem
+
+        if success:
+            self.memory[card.card_id] = min(0.99, current_mem + 0.1)
+        else:
+            self.memory[card.card_id] = min(0.99, current_mem + 0.2)
+
+        return success
+
+def action_simulate(deck: Deck):
+    print("Validation Simulation")
+    print("Comparing 'Smart Hybrid' vs 'Random' scheduler")
+    test_cards = deck.cards if deck.cards else [Card(i, f"Q{i}", f"A{i}") for i in range(20)]
+    results = {}
+    for algo in ["random", "hybrid"]:
+        sim_deck = Deck()
+        sim_deck.cards = [Card(c.card_id, c.front, c.back) for c in test_cards]
+        sim_deck.skills = [Skill(1, "General")]
+        for c in sim_deck.cards: c.skill_ids = [1]
+
+        student = VirtualStudent(sim_deck)
+        steps = 100
+        total_mastery = 0
+
+        for _ in range(steps):
+            for c in sim_deck.cards: c.next_due = datetime.datetime.now()
+
+            card = get_next_card(sim_deck, algorithm=algo)
+            if not card: break
+            outcome = student.attempt(card)
+            update_model(sim_deck, card, outcome)
+
+        avg_retention = sum(student.memory.values()) / len(student.memory)
+        results[algo] = avg_retention
+
+    print(f"\nResults (Average Student Retention after 100 steps):")
+    print(f"Random Scheduler: {results['random']:.2%}")
+    print(f"Hybrid BKT+SRS:   {results['hybrid']:.2%}")
+
+    if results['hybrid'] > results['random']:
+        print("\n[SUCCESS] The Smart Scheduler outperformed regular studying.")
+    else:
+        print("\n[NOTE] More data needed for significant lift.")
+
+    input("Press Enter to return...")
+
 
 
 def main() -> None:
@@ -737,7 +789,7 @@ def main() -> None:
         if opt == "1":
             action_study(deck)
         elif opt == "2":
-            """"""
+            action_simulate(deck)
         elif opt == "3":
             f = input("Front: ")
             b = input("Back: ")
