@@ -47,7 +47,7 @@ def calculate_bkt_update(
 
     if is_correct:
         numer = p_known * (1 -s)
-        denon = numer + (1 - p_known) * g
+        denom = numer + (1 - p_known) * g
     else:
         numer = p_known * s
         denom = numer + (1 - p_known) * (1 - g)
@@ -399,7 +399,7 @@ def update_model(deck: Deck, card: Card, is_correct: bool):
         p_slip = 0.1
         p_guess = 0.2
 
-    card.p_learn = calculate_bkt_update(card.p_learn, p_learn, p_slip, p_guess, is_correct)
+    card.p_known = calculate_bkt_update(card.p_known, p_learn, p_slip, p_guess, is_correct)
 
     for sid in card.skill_ids:
         s = deck.get_skill(sid)
@@ -638,8 +638,8 @@ def action_study(deck: Deck) -> None:
 
         print(f"\n[Card #{card.card_id}] P(Known): {card.p_known:.2f}")
         print(f"Q: {card.front}")
-        print("Press Enter to reveal....")
-        print_header(f"A: {card.back}")
+        input("Press Enter to reveal....")
+        print(f"A: {card.back}")
 
         res = input("Correct? (y/n/q): ").lower().strip()
         if res == 'q': break

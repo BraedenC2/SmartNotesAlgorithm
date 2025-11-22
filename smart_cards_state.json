@@ -1,0 +1,58 @@
+{
+  "next_card_id": 2,
+  "next_skill_id": 1,
+  "epsilon": 0.2,
+  "cards": [
+    {
+      "card_id": 1,
+      "front": "Front",
+      "back": "Back",
+      "skill_ids": [
+        1
+      ],
+      "p_known": 0.6235294117647058,
+      "attempts": 1,
+      "correct": 1,
+      "last_review": "2025-11-22T13:47:58.446471",
+      "next_due": "2025-11-23T13:47:58.446471",
+      "interval_days": 1.0
+    },
+    {
+      "card_id": 2,
+      "front": "Hola",
+      "back": "Hello",
+      "skill_ids": [
+        1
+      ],
+      "p_known": 0.6235294117647058,
+      "attempts": 1,
+      "correct": 1,
+      "last_review": "2025-11-22T13:48:03.636952",
+      "next_due": "2025-11-23T13:48:03.636952",
+      "interval_days": 1.0
+    },
+    {
+      "card_id": 1,
+      "front": "b",
+      "back": "2",
+      "skill_ids": [
+        1
+      ],
+      "p_known": 0.7017563759047051,
+      "attempts": 3,
+      "correct": 1,
+      "last_review": "2025-11-22T13:48:17.622340",
+      "next_due": "2025-11-23T13:48:17.622340",
+      "interval_days": 1.0
+    }
+  ],
+  "skills": [
+    {
+      "skill_id": 1,
+      "name": "Demonstration Deck",
+      "p_learn": 0.09228073657833234,
+      "p_slip": 0.1,
+      "p_guess": 0.2
+    }
+  ]
+}
