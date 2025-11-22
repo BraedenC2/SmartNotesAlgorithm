@@ -12,6 +12,7 @@ import os
 import random
 
 from dataclasses import dataclass, field
+from idlelib.pyshell import fix_x11_paste
 from typing import Optional, List, Dict
 
 # ALGORITHMS
@@ -383,7 +384,52 @@ def compute_card_mastery(deck: Deck, card: Card) -> float:
         return card.p_known
 
 def update_model(deck: Deck, card: Card, is_correct: bool):
-    """"""
+    if card.skill_ids:
+        skills = [deck.get_skill(sid) for sid in card.skill_ids if deck.get_skill(sid)]
+        if skills:
+            p_learn = sum(s.p_learn for s in skills) / len(skills)
+            p_slip = sum(s.p_slip for s in skills) / len(skills)
+            p_guess = sum(s.p_guess for s in skills) / len(skills)
+        else:
+            p_learn = 0.15
+            p_slip = 0.1
+            p_guess = 0.2
+    else:
+        p_learn = 0.15
+        p_slip = 0.1
+        p_guess = 0.2
+
+    card.p_learn = calculate_bkt_update(card.p_learn, p_learn, p_slip, p_guess, is_correct)
+
+    for sid in card.skill_ids:
+        s = deck.get_skill(sid)
+        if s:
+            s.adapt_parameters(card.p_known, is_correct)
+
+    now = datetime.datetime.now()
+    factor = 1.5 + (2.0 * card.p_known)
+    if is_correct:
+        raw_int = card.interval_days * factor
+        new_int = max(1.0, min(raw_int, 36500.0))
+    else:
+        new_int = 0.0
+
+    card.interval_days = new_int
+    card.last_review = now
+
+    if new_int >0:
+        try:
+            card.next_due = now + datetime.timedelta(days=new_int)
+        except OverflowError:
+            card.next_due = now.replace(year=9999)
+    else:
+        card.next_due = now
+
+    card.attempts += 1
+    if is_correct: card.correct += 1
+
+
+
 
 def update_card_schedule(card: Card, mastery: float, is_correct:bool, deck: Deck) -> None:
     now = datetime.datetime.now()
@@ -583,12 +629,22 @@ def action_view_cards(deck: Deck) -> None:
         wait_for_enter()
 
 def action_study(deck: Deck) -> None:
-    print("Study Mode")
-    print("Instructions: ")
-    print("1. You will be prompted for a card (the front)")
-    print("2. Try to recall the answer yourself")
-    print("3. See the answer, judge yourself")
-    print("'y' - you got it right, 'n' - you got it wrong, 'q' = quit\n")
+    print_header("\nStudy Session")
+    while True:
+        card = get_next_card(deck, "hybrid")
+        if not card:
+            print("No cards due")
+            break
+
+        print(f"\n[Card #{card.card_id}] P(Known): {card.p_known:.2f}")
+        print(f"Q: {card.front}")
+        print("Press Enter to reveal....")
+        print_header(f"A: {card.back}")
+
+        res = input("Correct? (y/n/q): ").lower().strip()
+        if res == 'q': break
+        update_model(deck, card, (res == 'y'))
+        print("Model updated")
 
 def action_mastery_report_cards(deck: Deck) -> None:
     print_header("Master Report Cards")
