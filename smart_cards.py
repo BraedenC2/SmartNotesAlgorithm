@@ -83,8 +83,8 @@ class Skill:
         actual = 1.0 if is_correct else 0.0
         error = actual - predicted_prob
 
-        self.p_learn = max(0.01, min(0.4, self.p_slip -(learning_rate * error)))
-        self.p_learn = max(0.01, min(0.5, self.p_learn +(learning_rate * error * 0.5)))
+        self.p_slip = max(0.01, min(0.4, self.p_slip - (learning_rate * error)))
+        self.p_learn = max(0.01, min(0.5, self.p_learn + (learning_rate * error * 0.5)))
 
 
     def to_dict(self) -> dict:
